@@ -283,7 +283,7 @@ namespace TestIdPCore.Controllers
         private Saml2Configuration GetRpSaml2Configuration(RelyingParty relyingParty = null)
         {
             _logger.LogInformation(">>>>>> GetRpConfig0");
-
+            
             var rpConfig = new Saml2Configuration()
             {
                 Issuer = config.Issuer,
@@ -294,9 +294,19 @@ namespace TestIdPCore.Controllers
                 SigningCertificate = config.SigningCertificate,
                 SignatureAlgorithm = config.SignatureAlgorithm,
                 CertificateValidationMode = config.CertificateValidationMode,
-                RevocationMode = config.RevocationMode
+                RevocationMode = config.RevocationMode,
             };
             _logger.LogInformation(rpConfig.ToString());
+            _logger.LogInformation(config.Issuer.ToString());
+            _logger.LogInformation(config.SignAuthnRequest.ToString());
+            _logger.LogInformation(config.SingleSignOnDestination.ToString());
+            _logger.LogInformation(config.SingleLogoutDestination.ToString());
+            _logger.LogInformation(config.ArtifactResolutionService.ToString());
+            _logger.LogInformation(config.SigningCertificate.ToString());
+            _logger.LogInformation(config.SignatureAlgorithm.ToString());
+            _logger.LogInformation(config.CertificateValidationMode.ToString());
+            _logger.LogInformation(config.RevocationMode.ToString());
+
             _logger.LogInformation(">>>>>> GetRpConfig1");
 
             rpConfig.AllowedAudienceUris.AddRange(config.AllowedAudienceUris);
@@ -320,8 +330,11 @@ namespace TestIdPCore.Controllers
 
         private async Task<RelyingParty> ValidateRelyingParty(string issuer)
         {
+            _logger.LogInformation(">>>>>> ValidateRelyingParty0");
+
             // Create a cancellation token for each Relying Party call
             await Task.WhenAll(settings.RelyingParties.Select(rp => LoadRelyingPartyAsync(rp, new CancellationTokenSource(1 * 1000))));
+            _logger.LogInformation(">>>>>> ValidateRelyingParty1");
 
             // return settings.RelyingParties.Where(rp => rp.Issuer != null && rp.Issuer.Equals(issuer, StringComparison.InvariantCultureIgnoreCase)).Single();
             return settings.RelyingParties.SingleOrDefault(rp => rp.Issuer != null && rp.Issuer.Equals(issuer, StringComparison.InvariantCultureIgnoreCase));
