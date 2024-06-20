@@ -15,6 +15,8 @@ using System.Threading.Tasks;
 using System.Threading;
 using System.Collections.Concurrent;
 using Saml2Http = ITfoxtec.Identity.Saml2.Http;
+using Microsoft.Extensions.Logging;
+using TestIdPCore.Services;
 #if DEBUG
 using System.Diagnostics;
 #endif
@@ -28,22 +30,39 @@ namespace TestIdPCore.Controllers
         private readonly Settings settings;
         private readonly Saml2Configuration config;
         private readonly IHttpClientFactory httpClientFactory;
+        private readonly IUserService userService;
+        private readonly ILogger<AuthController> _logger;
 
         // List of Artifacts for test purposes.
         private static ConcurrentDictionary<string, Saml2AuthnResponse> artifactSaml2AuthnResponseCache = new ConcurrentDictionary<string, Saml2AuthnResponse>();
 
-        public AuthController(Settings settings, Saml2Configuration config, IHttpClientFactory httpClientFactory)
+        public AuthController(Settings settings, Saml2Configuration config, IHttpClientFactory httpClientFactory, IUserService userService, ILogger<AuthController> logger)
         {
             this.settings = settings;
             this.config = config;
             this.httpClientFactory = httpClientFactory;
+            this.userService = userService;
+            _logger = logger;
         }
 
         [Route("Login")]
         public async Task<IActionResult> Login()
         {
+            _logger.LogInformation(">>>>>> Login0");
+
             var httpRequest = Request.ToGenericHttpRequest(validate: true);
+            _logger.LogInformation(">>>>>> Login1");
+
             var relyingParty = await ValidateRelyingParty(ReadRelyingPartyFromLoginRequest(httpRequest));
+            _logger.LogInformation(">>>>>> Login2");
+
+            if (relyingParty == null)
+            {
+                _logger.LogError("Relying party not found for the given issuer.");
+
+                // Redirect or return an error response
+                return RedirectToAction("Home"); // Example redirect to home page
+            }
 
             var saml2AuthnRequest = new Saml2AuthnRequest(GetRpSaml2Configuration(relyingParty));
             try
@@ -51,6 +70,16 @@ namespace TestIdPCore.Controllers
                 httpRequest.Binding.Unbind(httpRequest, saml2AuthnRequest);
 
                 // ****  Handle user login e.g. in GUI ****
+                
+                // Simulate user login process
+                var isAuthenticated = await ValidateUserCredentials(httpRequest.Form["testuser"], httpRequest.Form["testpassword"]);
+
+                if (!isAuthenticated)
+                {
+                    // If authentication fails, handle accordingly (e.g., redirect to login page)
+                    return RedirectToAction("Login", "Account");
+                }
+
                 // Test user with session index and claims
                 var sessionIndex = Guid.NewGuid().ToString();
                 var claims = CreateTestUserClaims(saml2AuthnRequest.Subject?.NameID?.ID);
@@ -124,9 +153,28 @@ namespace TestIdPCore.Controllers
             }
         }
 
+        private async Task<bool> ValidateUserCredentials(string username, string password)
+        {
+            // Replace this with your actual authentication logic
+            if (username == "testuser" && password == "testpassword")
+            {
+                return true; // Authentication successful
+            }
+            else
+            {
+                return false; // Authentication failed
+            }
+        }
+
         private string ReadRelyingPartyFromLoginRequest(Saml2Http.HttpRequest httpRequest)
         {
-            return httpRequest.Binding.ReadSamlRequest(httpRequest, new Saml2AuthnRequest(GetRpSaml2Configuration()))?.Issuer;
+            _logger.LogInformation(">>>>>> ReadRP0");
+
+            var saml2AuthnRequest = httpRequest.Binding.ReadSamlRequest(httpRequest, new Saml2AuthnRequest(GetRpSaml2Configuration()));
+            _logger.LogInformation(">>>>>> ReadRP1");
+
+            return saml2AuthnRequest?.Issuer;
+            // return httpRequest.Binding.ReadSamlRequest(httpRequest, new Saml2AuthnRequest(GetRpSaml2Configuration()))?.Issuer;
         }
 
         private string ReadRelyingPartyFromLogoutRequest(Saml2Http.HttpRequest httpRequest)
@@ -234,6 +282,8 @@ namespace TestIdPCore.Controllers
 
         private Saml2Configuration GetRpSaml2Configuration(RelyingParty relyingParty = null)
         {
+            _logger.LogInformation(">>>>>> GetRpConfig0");
+
             var rpConfig = new Saml2Configuration()
             {
                 Issuer = config.Issuer,
@@ -246,17 +296,24 @@ namespace TestIdPCore.Controllers
                 CertificateValidationMode = config.CertificateValidationMode,
                 RevocationMode = config.RevocationMode
             };
+            _logger.LogInformation(rpConfig.ToString());
+            _logger.LogInformation(">>>>>> GetRpConfig1");
 
             rpConfig.AllowedAudienceUris.AddRange(config.AllowedAudienceUris);
+            _logger.LogInformation(">>>>>> GetRpConfig2");
 
             if (relyingParty != null) 
             {
                 rpConfig.SignatureValidationCertificates.AddRange(relyingParty.SignatureValidationCertificates);
+                _logger.LogInformation(">>>>>> GetRpConfig3");
+
                 if (relyingParty.EecryptionCertificates?.Count() > 0)
                 {
                     rpConfig.EncryptionCertificate = relyingParty.EecryptionCertificates.LastOrDefault();
                 }
+                _logger.LogInformation(">>>>>> GetRpConfig4");
             }
+            _logger.LogInformation(">>>>>> GetRpConfig5");
 
             return rpConfig;
         }
@@ -266,7 +323,8 @@ namespace TestIdPCore.Controllers
             // Create a cancellation token for each Relying Party call
             await Task.WhenAll(settings.RelyingParties.Select(rp => LoadRelyingPartyAsync(rp, new CancellationTokenSource(1 * 1000))));
 
-            return settings.RelyingParties.Where(rp => rp.Issuer != null && rp.Issuer.Equals(issuer, StringComparison.InvariantCultureIgnoreCase)).Single();
+            // return settings.RelyingParties.Where(rp => rp.Issuer != null && rp.Issuer.Equals(issuer, StringComparison.InvariantCultureIgnoreCase)).Single();
+            return settings.RelyingParties.SingleOrDefault(rp => rp.Issuer != null && rp.Issuer.Equals(issuer, StringComparison.InvariantCultureIgnoreCase));
         }
 
         private async Task LoadRelyingPartyAsync(RelyingParty rp, CancellationTokenSource cancellationTokenSource)
